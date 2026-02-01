@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instructional Journey Mapping Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @media print {
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .no-print { display: none !important; }
+            body { background: white !important; padding: 0 !important; margin: 0 !important; }
+            .max-w-7xl { box-shadow: none !important; border: none !important; width: 100% !important; max-width: 100% !important; }
+            .scroll-container { overflow: visible !important; }
+            #journey-container { 
+                display: flex !important; 
+                flex-direction: row !important; 
+                min-width: 100% !important; 
+                width: 100% !important;
+                divide-x: 1px solid #e2e8f0 !important;
+            }
+            .step-column { 
+                border: 1px solid #e2e8f0 !important; 
+                width: auto !important;
+                flex: 1 1 0 !important;
+                min-width: 0 !important;
+                page-break-inside: avoid;
+            }
+            .graph-area { height: 160px !important; display: block !important; opacity: 1 !important; visibility: visible !important; }
+            .graph-canvas { display: block !important; position: absolute !important; }
+            textarea { border: none !important; height: auto !important; min-height: 50px !important; overflow: visible !important; }
+            .solution-editor { height: auto !important; overflow: visible !important; }
+        }
+        
+        .scroll-container {
+            overflow-x: auto;
+            position: relative;
+            background: white;
+            scroll-behavior: smooth;
+        }
+
+        .graph-area {
+            position: relative;
+            height: 0;
+            overflow: hidden;
+            background: #fdfdfd;
+            transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .graph-area.expanded {
+            height: 180px;
+        }
+        .graph-header {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .graph-header:hover {
+            background-color: #eef2ff !important;
+        }
+
+        .graph-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 20;
+            display: none;
+        }
+        .graph-area.expanded ~ .graph-canvas, 
+        .expanded .graph-canvas {
+            display: block;
+        }
+
+        .graph-grid-line {
+            position: absolute;
+            left: 0;
+            right: 0;
+            border-top: 1px dashed #e2e8f0;
+            pointer-events: none;
+        }
+
+        .emotion-slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 4px;
+            border-radius: 2px;
+            background: #cbd5e1;
+            outline: none;
+            margin: 0;
+            display: block;
+        }
+        .emotion-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+            border: 2px solid currentColor;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            position: relative;
+            z-index: 10;
+        }
+        .slider-ticks {
+            display: flex;
+            justify-content: space-between;
+            padding: 0 4px;
+            margin-top: -4px;
+            pointer-events: none;
+        }
+        .slider-ticks span { width: 1px; height: 6px; background: #94a3b8; }
+
+        .section-header {
+            background-color: #f8fafc; font-weight: bold; text-transform: uppercase;
+            font-size: 0.7rem; padding: 0.5rem 0.75rem; border-bottom: 1px solid #e2e8f0;
+            display: flex; align-items: center; justify-content: space-between;
+            letter-spacing: 0.025em; color: #475569;
+        }
+
+        .dragging { opacity: 0.4; border: 2px dashed #6366f1 !important; background: #f5f3ff; }
+        .drag-handle { cursor: grab; padding-right: 8px; color: #94a3b8; }
+
+        .learner-dot {
+            width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px;
+        }
+        
+        .chevron {
+            transition: transform 0.3s;
+            display: inline-block;
+        }
+        .expanded .chevron { transform: rotate(180deg); }
+
+        .add-learner-btn {
+            width: 100%; padding: 6px; border: 1px dashed #cbd5e1; border-radius: 6px;
+            color: #64748b; font-size: 10px; font-weight: bold; text-transform: uppercase;
+            letter-spacing: 0.05em; transition: all 0.2s; margin-top: 10px;
+        }
+        
+        /* Tooltip fixes for first column visibility */
+        .tooltip-text {
+            visibility: hidden; width: 280px; background-color: #1e293b; color: #fff;
+            text-align: left; border-radius: 8px; padding: 12px; position: absolute;
+            z-index: 100; top: 130%; right: 0; opacity: 0; transition: opacity 0.2s; 
+            font-size: 0.75rem; pointer-events: none;
+            font-weight: normal; text-transform: none; letter-spacing: normal;
+        }
+        /* When in the first column, align tooltip to the left so it grows right */
+        .step-column:first-child .tooltip-text {
+            right: auto;
+            left: 0;
+        }
+        .tooltip-container:hover .tooltip-text { visibility: visible; opacity: 1; }
+
+        /* UDL MENU THEME */
+        .udl-menu {
+            display: none; position: absolute; bottom: 100%; left: 0; width: 100%;
+            max-height: 450px; overflow-y: auto; background: white; border: 1px solid #e2e8f0;
+            box-shadow: 0 -10px 25px -5px rgba(0,0,0,0.1); z-index: 100; border-radius: 12px 12px 0 0;
+        }
+        .udl-menu.active { display: block; }
+        
+        .principle-header {
+            font-weight: 800; text-transform: uppercase; font-size: 10px;
+            padding: 12px; position: sticky; top: 0; color: white; z-index: 20;
+        }
+        .guideline-subheader {
+            font-weight: 700; font-size: 9px; padding: 6px 12px; 
+            background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #475569;
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .udl-item {
+            padding: 8px 16px; font-size: 11px; cursor: pointer;
+            border-bottom: 1px solid #f1f5f9; transition: background 0.2s;
+            display: flex; align-items: flex-start; gap: 8px;
+        }
+        .udl-item:hover { background: #f1f5f9; }
+        
+        .bg-udl-engagement { background-color: #3C854A; }
+        .bg-udl-representation { background-color: #367BB3; }
+        .bg-udl-action { background-color: #6A5190; }
+
+        .udl-pill {
+            font-size: 8px; padding: 2px 8px; border-radius: 999px;
+            color: white; font-weight: bold; text-transform: uppercase;
+        }
+
+        .solution-editor {
+            min-height: 150px; padding: 12px; font-size: 14px; line-height: 1.5;
+            outline: none; overflow-y: auto;
+        }
+        .udl-solution-chip {
+            display: inline-block; padding: 4px 8px; border-radius: 4px;
+            color: white; font-size: 11px; font-weight: 600; margin: 2px 0;
+            line-height: 1.2; width: 100%;
+        }
+        .udl-solution-chip .sub-text {
+            display: block; font-size: 9px; opacity: 0.9; font-weight: 400;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 p-4 md:p-8 font-sans text-slate-900">
+
+    <div class="max-w-7xl mx-auto bg-white shadow-2xl rounded-xl overflow-hidden border border-slate-200">
+        <!-- Header -->
+        <header class="bg-slate-800 p-6 text-white border-b-4 border-indigo-500">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h1 class="text-2xl font-bold tracking-tight uppercase">Instructional Journey Map</h1>
+                    <p class="text-slate-400 text-xs font-bold tracking-widest mt-1">CAST UDL GUIDELINES v2.2 INTEGRATION</p>
+                </div>
+                <div class="no-print flex gap-2">
+                    <button onclick="window.print()" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 border border-slate-600">
+                        PRINT REPORT
+                    </button>
+                    <button onclick="addStep()" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2">
+                        + ADD SEGMENT
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Tool Container -->
+        <div class="relative">
+            <div id="scroll-wrapper" class="scroll-container">
+                <canvas id="graphCanvas" class="graph-canvas"></canvas>
+
+                <div id="journey-container" class="flex min-w-max divide-x divide-slate-200">
+                    <!-- Column Template -->
+                    <div class="step-column w-80 flex-shrink-0 flex flex-col" draggable="true">
+                        <div class="bg-slate-900 text-white p-2 text-[10px] font-bold flex justify-between items-center">
+                            <div class="flex items-center">
+                                <div class="drag-handle no-print">⠿</div>
+                                <span class="segment-label uppercase tracking-widest">SEGMENT 1</span>
+                            </div>
+                            <button onclick="removeStep(this)" class="no-print opacity-50 hover:opacity-100 transition-opacity">✕</button>
+                        </div>
+
+                        <!-- Activities -->
+                        <div class="border-b border-slate-100">
+                            <div class="section-header">Activities & Methods</div>
+                            <textarea class="w-full p-3 text-sm focus:bg-slate-50 outline-none resize-none h-24 transition-colors" placeholder="What are the students doing?"></textarea>
+                        </div>
+
+                        <!-- Materials -->
+                        <div class="border-b border-slate-100">
+                            <div class="section-header">Materials & Tools</div>
+                            <textarea class="w-full p-3 text-sm focus:bg-slate-50 outline-none resize-none h-20 transition-colors" placeholder="Apps, tools, papers..."></textarea>
+                        </div>
+
+                        <!-- Graph Row -->
+                        <div class="graph-section border-b border-slate-100">
+                            <div class="section-header graph-header !bg-indigo-50/30 !text-indigo-900 border-indigo-100" onclick="toggleGraph()">
+                                <div class="flex items-center gap-2">
+                                    <span class="chevron">▼</span>
+                                    Level of Emotion or Productivity
+                                </div>
+                                <div class="tooltip-container relative">
+                                    <span class="info-icon text-[10px] bg-slate-200 w-4 h-4 rounded-full flex items-center justify-center font-bold">?</span>
+                                    <div class="tooltip-text">
+                                        <p class="mb-2"><strong>High Point:</strong> Emotion drives engagement. Effort feels productive.</p>
+                                        <p><strong>Low Point:</strong> Emotion interferes. Effort feels unproductive.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="graph-area">
+                                <div class="absolute inset-0 pointer-events-none mt-2">
+                                    <div class="graph-grid-line" style="top: 20%"></div>
+                                    <div class="graph-grid-line" style="top: 50%"></div>
+                                    <div class="graph-grid-line" style="top: 80%"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Engagement Section -->
+                        <div class="bg-slate-50/50 p-4 border-b border-slate-100 min-h-[160px]">
+                            <div class="flex justify-between items-center mb-4">
+                                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Learner Engagement</span>
+                                <span class="text-[8px] text-slate-300 font-bold uppercase tracking-widest">Low &larr; &rarr; High</span>
+                            </div>
+                            <div class="learner-list space-y-6"></div>
+                            <button onclick="addLearner()" class="add-learner-btn no-print">+ Add Learner</button>
+                        </div>
+
+                        <!-- Barriers -->
+                        <div class="border-b border-slate-100 bg-rose-50/20">
+                            <div class="section-header !bg-rose-100/50 !text-rose-900">Possible Barriers</div>
+                            <textarea class="w-full p-3 text-sm bg-transparent outline-none resize-none h-24" placeholder="What might block learning?"></textarea>
+                        </div>
+
+                        <!-- Solutions -->
+                        <div class="relative flex-grow flex flex-col bg-emerald-50/10">
+                            <div class="section-header !bg-slate-100 !text-slate-800">
+                                <div class="flex items-center gap-2">
+                                    <span>UDL Solutions</span>
+                                    <div class="tooltip-container relative">
+                                        <span class="info-icon text-[10px] bg-slate-300 w-4 h-4 rounded-full flex items-center justify-center font-bold">?</span>
+                                        <div class="tooltip-text">Type UDL Solution or select from Framework Guide</div>
+                                    </div>
+                                </div>
+                                <button onclick="toggleUDLMenu(this)" class="no-print text-[9px] bg-slate-700 text-white px-2 py-0.5 rounded-full hover:bg-slate-800">Add Solution</button>
+                            </div>
+                            
+                            <div class="udl-menu no-print">
+                                <!-- Engagement -->
+                                <div class="principle-header bg-udl-engagement">Engagement (The Why)</div>
+                                <div class="guideline-subheader">7 Recruiting Interest</div>
+                                <div class="udl-item" onclick="insertUDL(this, '7 Recruiting Interest', '7.1 Optimize individual choice and autonomy', '#3C854A')">7.1 Optimize individual choice and autonomy</div>
+                                <div class="udl-item" onclick="insertUDL(this, '7 Recruiting Interest', '7.2 Optimize relevance, value, and authenticity', '#3C854A')">7.2 Optimize relevance, value, and authenticity</div>
+                                <div class="udl-item" onclick="insertUDL(this, '7 Recruiting Interest', '7.3 Minimize threats and distractions', '#3C854A')">7.3 Minimize threats and distractions</div>
+                                
+                                <div class="guideline-subheader">8 Sustaining Effort & Persistence</div>
+                                <div class="udl-item" onclick="insertUDL(this, '8 Sustaining Effort & Persistence', '8.1 Heighten salience of goals and objectives', '#3C854A')">8.1 Heighten salience of goals and objectives</div>
+                                <div class="udl-item" onclick="insertUDL(this, '8 Sustaining Effort & Persistence', '8.2 Vary demands and resources to optimize challenge', '#3C854A')">8.2 Vary demands and resources to optimize challenge</div>
+                                <div class="udl-item" onclick="insertUDL(this, '8 Sustaining Effort & Persistence', '8.3 Foster collaboration and community', '#3C854A')">8.3 Foster collaboration and community</div>
+                                <div class="udl-item" onclick="insertUDL(this, '8 Sustaining Effort & Persistence', '8.4 Increase mastery-oriented feedback', '#3C854A')">8.4 Increase mastery-oriented feedback</div>
+
+                                <div class="guideline-subheader">9 Self Regulation</div>
+                                <div class="udl-item" onclick="insertUDL(this, '9 Self Regulation', '9.1 Promote expectations and beliefs that optimize motivation', '#3C854A')">9.1 Promote expectations and beliefs that optimize motivation</div>
+                                <div class="udl-item" onclick="insertUDL(this, '9 Self Regulation', '9.2 Facilitate personal coping skills and strategies', '#3C854A')">9.2 Facilitate personal coping skills and strategies</div>
+                                <div class="udl-item" onclick="insertUDL(this, '9 Self Regulation', '9.3 Develop self-assessment and reflection', '#3C854A')">9.3 Develop self-assessment and reflection</div>
+
+                                <!-- Representation -->
+                                <div class="principle-header bg-udl-representation">Representation (The What)</div>
+                                <div class="guideline-subheader">1 Perception</div>
+                                <div class="udl-item" onclick="insertUDL(this, '1 Perception', '1.1 Offer ways of customizing the display of information', '#367BB3')">1.1 Offer ways of customizing the display of information</div>
+                                <div class="udl-item" onclick="insertUDL(this, '1 Perception', '1.2 Offer alternatives for auditory information', '#367BB3')">1.2 Offer alternatives for auditory information</div>
+                                <div class="udl-item" onclick="insertUDL(this, '1 Perception', '1.3 Offer alternatives for visual information', '#367BB3')">1.3 Offer alternatives for visual information</div>
+
+                                <div class="guideline-subheader">2 Language & Symbols</div>
+                                <div class="udl-item" onclick="insertUDL(this, '2 Language & Symbols', '2.1 Clarify vocabulary and symbols', '#367BB3')">2.1 Clarify vocabulary and symbols</div>
+                                <div class="udl-item" onclick="insertUDL(this, '2 Language & Symbols', '2.2 Clarify syntax and structure', '#367BB3')">2.2 Clarify syntax and structure</div>
+                                <div class="udl-item" onclick="insertUDL(this, '2 Language & Symbols', '2.3 Support decoding of text, mathematical notation, and symbols', '#367BB3')">2.3 Support decoding of text, math, & symbols</div>
+                                <div class="udl-item" onclick="insertUDL(this, '2 Language & Symbols', '2.4 Promote understanding across languages', '#367BB3')">2.4 Promote understanding across languages</div>
+                                <div class="udl-item" onclick="insertUDL(this, '2 Language & Symbols', '2.5 Illustrate through multiple media', '#367BB3')">2.5 Illustrate through multiple media</div>
+
+                                <div class="guideline-subheader">3 Comprehension</div>
+                                <div class="udl-item" onclick="insertUDL(this, '3 Comprehension', '3.1 Activate or supply background knowledge', '#367BB3')">3.1 Activate or supply background knowledge</div>
+                                <div class="udl-item" onclick="insertUDL(this, '3 Comprehension', '3.2 Highlight patterns, critical features, big ideas, and relationships', '#367BB3')">3.2 Highlight patterns, critical features, big ideas</div>
+                                <div class="udl-item" onclick="insertUDL(this, '3 Comprehension', '3.3 Guide information processing and visualization', '#367BB3')">3.3 Guide information processing & visualization</div>
+                                <div class="udl-item" onclick="insertUDL(this, '3 Comprehension', '3.4 Maximize transfer and generalization', '#367BB3')">3.4 Maximize transfer and generalization</div>
+
+                                <!-- Action & Expression -->
+                                <div class="principle-header bg-udl-action">Action & Expression (The How)</div>
+                                <div class="guideline-subheader">4 Physical Action</div>
+                                <div class="udl-item" onclick="insertUDL(this, '4 Physical Action', '4.1 Vary the methods for response and navigation', '#6A5190')">4.1 Vary the methods for response and navigation</div>
+                                <div class="udl-item" onclick="insertUDL(this, '4 Physical Action', '4.2 Optimize access to tools and assistive technologies', '#6A5190')">4.2 Optimize access to tools & assistive tech</div>
+
+                                <div class="guideline-subheader">5 Expression & Communication</div>
+                                <div class="udl-item" onclick="insertUDL(this, '5 Expression & Communication', '5.1 Use multiple media for communication', '#6A5190')">5.1 Use multiple media for communication</div>
+                                <div class="udl-item" onclick="insertUDL(this, '5 Expression & Communication', '5.2 Use multiple tools for construction and composition', '#6A5190')">5.2 Use multiple tools for construction & composition</div>
+                                <div class="udl-item" onclick="insertUDL(this, '5 Expression & Communication', '5.3 Build fluencies with graduated levels of support for practice and performance', '#6A5190')">5.3 Build fluencies with graduated support</div>
+
+                                <div class="guideline-subheader">6 Executive Functions</div>
+                                <div class="udl-item" onclick="insertUDL(this, '6 Executive Functions', '6.1 Guide appropriate goal-setting', '#6A5190')">6.1 Guide appropriate goal-setting</div>
+                                <div class="udl-item" onclick="insertUDL(this, '6 Executive Functions', '6.2 Support planning and strategy development', '#6A5190')">6.2 Support planning and strategy development</div>
+                                <div class="udl-item" onclick="insertUDL(this, '6 Executive Functions', '6.3 Facilitate managing information and resources', '#6A5190')">6.3 Facilitate managing information and resources</div>
+                                <div class="udl-item" onclick="insertUDL(this, '6 Executive Functions', '6.4 Enhance capacity for monitoring progress', '#6A5190')">6.4 Enhance capacity for monitoring progress</div>
+                            </div>
+
+                            <div class="p-2 flex gap-1 flex-wrap no-print bg-slate-50 border-b border-slate-200">
+                                <span class="udl-pill bg-udl-engagement">Engagement</span>
+                                <span class="udl-pill bg-udl-representation">Representation</span>
+                                <span class="udl-pill bg-udl-action">Action & Expression</span>
+                            </div>
+                            <!-- Solution area -->
+                            <div class="solution-editor w-full bg-transparent" contenteditable="true"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="p-4 bg-slate-50 border-t flex flex-wrap justify-between items-center gap-4">
+            <div id="learner-legend" class="flex gap-4">
+                <a href="https://udlguidelines.cast.org/" target="_blank" class="no-print bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold px-3 py-1.5 rounded border border-indigo-200 transition uppercase tracking-wider">
+                    Official CAST UDL Guidelines &rarr;
+                </a>
+            </div>
+            <div class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">UDL Framework © CAST 2018 | Journey Map Tool</div>
+        </footer>
+    </div>
+
+    <script>
+        const container = document.getElementById('journey-container');
+        const canvas = document.getElementById('graphCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let draggedItem = null;
+        let isGraphExpanded = false;
+        let learners = [
+            { id: 1, color: '#4f46e5', name: 'Learner 1' },
+            { id: 2, color: '#e11d48', name: 'Learner 2' },
+            { id: 3, color: '#059669', name: 'Learner 3' }
+        ];
+
+        function init() {
+            window.addEventListener('resize', () => { if(isGraphExpanded) drawGraph(); });
+            
+            document.addEventListener('input', (e) => {
+                if(e.target.classList.contains('emotion-slider') || e.target.classList.contains('annotation-input')) {
+                    if(!isGraphExpanded) toggleGraph(true);
+                    drawGraph();
+                }
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.udl-menu') && !e.target.innerText.includes('Add Solution')) {
+                    document.querySelectorAll('.udl-menu').forEach(m => m.classList.remove('active'));
+                }
+            });
+            
+            const template = container.querySelector('.step-column');
+            renderSliders(template);
+            setupDragEvents(template);
+            
+            for(let i=0; i<2; i++) addStep(); 
+            updateSegmentLabels();
+        }
+
+        function toggleUDLMenu(btn) {
+            const menu = btn.closest('.step-column').querySelector('.udl-menu');
+            const isActive = menu.classList.contains('active');
+            document.querySelectorAll('.udl-menu').forEach(m => m.classList.remove('active'));
+            if (!isActive) menu.classList.add('active');
+        }
+
+        function insertUDL(item, guideline, consideration, color) {
+            const editor = item.closest('.step-column').querySelector('.solution-editor');
+            const chip = document.createElement('div');
+            chip.className = 'udl-solution-chip';
+            chip.style.backgroundColor = color;
+            chip.contentEditable = "false";
+            chip.innerHTML = `<span class="sub-text">${guideline.toUpperCase()}</span>${consideration}`;
+            editor.appendChild(chip);
+            editor.appendChild(document.createElement('br'));
+            editor.focus();
+            const range = document.createRange();
+            range.selectNodeContents(editor);
+            range.collapse(false);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            item.closest('.udl-menu').classList.remove('active');
+        }
+
+        function toggleGraph(forceState) {
+            isGraphExpanded = forceState !== undefined ? forceState : !isGraphExpanded;
+            document.querySelectorAll('.graph-section').forEach(s => s.classList.toggle('expanded', isGraphExpanded));
+            document.querySelectorAll('.graph-area').forEach(a => a.classList.toggle('expanded', isGraphExpanded));
+            if (isGraphExpanded) {
+                setTimeout(drawGraph, 50); 
+                setTimeout(drawGraph, 310);
+            } else {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                canvas.style.display = 'none';
+            }
+        }
+
+        function createLearnerItemHTML(learner) {
+            return `
+                <div class="learner-item space-y-2" data-learner-id="${learner.id}">
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center">
+                            <span class="learner-dot" style="background: ${learner.color}"></span>
+                            <span class="text-[9px] font-bold text-slate-500 uppercase tracking-tight">${learner.name}</span>
+                        </div>
+                        <button onclick="removeLearner(${learner.id})" class="no-print text-slate-300 hover:text-red-500 text-[10px]">✕</button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[8px] font-bold text-slate-400 shrink-0">L</span>
+                        <div class="flex-grow">
+                            <input type="range" min="1" max="5" step="1" value="3" class="emotion-slider" style="color: ${learner.color}" data-learner-id="${learner.id}">
+                            <div class="slider-ticks"><span></span><span></span><span></span><span></span><span></span></div>
+                        </div>
+                        <span class="text-[8px] font-bold text-slate-400 shrink-0">H</span>
+                    </div>
+                    <input type="text" placeholder="Annotate emotion..." class="annotation-input w-full bg-transparent border-b border-indigo-100/50 text-[10px] py-1 outline-none italic text-slate-600" data-learner-id="${learner.id}">
+                </div>`;
+        }
+
+        function renderSliders(column) {
+            column.querySelector('.learner-list').innerHTML = learners.map(l => createLearnerItemHTML(l)).join('');
+        }
+
+        function addLearner() {
+            if (learners.length >= 8) return;
+            const extraColors = ['#4f46e5', '#e11d48', '#059669', '#d97706', '#7c3aed', '#2563eb', '#db2777', '#4b5563'];
+            const id = Date.now();
+            const newLearner = { id, color: extraColors[learners.length] || '#000', name: `Learner ${learners.length + 1}` };
+            learners.push(newLearner);
+            container.querySelectorAll('.learner-list').forEach(list => {
+                const div = document.createElement('div');
+                div.innerHTML = createLearnerItemHTML(newLearner);
+                list.appendChild(div.firstElementChild);
+            });
+            if(isGraphExpanded) drawGraph();
+        }
+
+        function removeLearner(id) {
+            if (learners.length <= 1) return;
+            learners = learners.filter(l => l.id !== id);
+            container.querySelectorAll(`.learner-item[data-learner-id="${id}"]`).forEach(el => el.remove());
+            if(isGraphExpanded) drawGraph();
+        }
+
+        function addStep() {
+            const template = container.querySelector('.step-column');
+            const newCol = template.cloneNode(true);
+            newCol.querySelectorAll('textarea, input[type="text"]').forEach(t => t.value = '');
+            newCol.querySelector('.solution-editor').innerHTML = '';
+            newCol.querySelectorAll('input[type="range"]').forEach(r => r.value = 3);
+            newCol.querySelector('.udl-menu').classList.remove('active');
+            setupDragEvents(newCol);
+            container.appendChild(newCol);
+            updateSegmentLabels();
+            if(isGraphExpanded) drawGraph();
+        }
+
+        function removeStep(btn) {
+            if (container.children.length > 1) {
+                btn.closest('.step-column').remove();
+                updateSegmentLabels();
+                if(isGraphExpanded) drawGraph();
+            }
+        }
+
+        function updateSegmentLabels() {
+            container.querySelectorAll('.step-column').forEach((col, i) => {
+                col.querySelector('.segment-label').innerText = `SEGMENT ${i+1}`;
+            });
+        }
+
+        function setupDragEvents(item) {
+            item.addEventListener('dragstart', () => { draggedItem = item; item.classList.add('dragging'); if(isGraphExpanded) toggleGraph(false); });
+            item.addEventListener('dragend', () => { item.classList.remove('dragging'); draggedItem = null; updateSegmentLabels(); if(isGraphExpanded) toggleGraph(true); });
+            item.addEventListener('dragover', e => {
+                e.preventDefault();
+                const draggables = [...container.querySelectorAll('.step-column:not(.dragging)')];
+                const afterElement = draggables.reduce((closest, child) => {
+                    const box = child.getBoundingClientRect();
+                    const offset = e.clientX - box.left - box.width / 2;
+                    return (offset < 0 && offset > closest.offset) ? { offset, element: child } : closest;
+                }, { offset: Number.NEGATIVE_INFINITY }).element;
+                if (!afterElement) container.appendChild(draggedItem);
+                else container.insertBefore(draggedItem, afterElement);
+            });
+        }
+
+        function drawGraph() {
+            if (!isGraphExpanded) return;
+            canvas.style.display = 'block';
+            canvas.width = container.scrollWidth;
+            canvas.height = container.scrollHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const columns = [...container.querySelectorAll('.step-column')];
+            const containerRect = container.getBoundingClientRect();
+            const segmentStacks = columns.map(() => ({}));
+            learners.forEach(learner => {
+                const points = [];
+                columns.forEach((col, colIdx) => {
+                    const slider = col.querySelector(`.emotion-slider[data-learner-id="${learner.id}"]`);
+                    const annotation = col.querySelector(`.annotation-input[data-learner-id="${learner.id}"]`);
+                    const graphArea = col.querySelector('.graph-area');
+                    if (!slider || !graphArea) return;
+                    const colRect = col.getBoundingClientRect();
+                    const graphRect = graphArea.getBoundingClientRect();
+                    const x = (colRect.left - containerRect.left) + (colRect.width / 2);
+                    const val = parseInt(slider.value);
+                    const percent = 1 - ((val - 1) / 4); 
+                    const y = (graphRect.top - containerRect.top) + 30 + (percent * (graphRect.height - 60));
+                    if (!segmentStacks[colIdx][val]) segmentStacks[colIdx][val] = 0;
+                    points.push({ x, y, val, color: learner.color, stackLevel: segmentStacks[colIdx][val]++, text: annotation ? annotation.value : '' });
+                });
+                if (points.length < 2) return;
+                ctx.beginPath(); ctx.strokeStyle = learner.color; ctx.globalAlpha = 0.8; ctx.lineWidth = 3;
+                ctx.moveTo(points[0].x, points[0].y);
+                for (let i = 0; i < points.length - 1; i++) {
+                    const cpX = (points[i].x + points[i+1].x) / 2;
+                    ctx.bezierCurveTo(cpX, points[i].y, cpX, points[i+1].y, points[i+1].x, points[i+1].y);
+                }
+                ctx.stroke(); ctx.globalAlpha = 1.0;
+                points.forEach(p => {
+                    ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2); ctx.fill();
+                    ctx.strokeStyle = 'white'; ctx.lineWidth = 1.5; ctx.stroke();
+                    if (p.text.trim()) {
+                        ctx.save(); ctx.font = 'italic 10px sans-serif';
+                        const tw = ctx.measureText(p.text).width + 12;
+                        const bx = p.x - (tw / 2);
+                        const by = p.y - (18 + (p.stackLevel * 22));
+                        ctx.fillStyle = 'white'; ctx.shadowBlur = 4; ctx.shadowColor = 'rgba(0,0,0,0.1)';
+                        ctx.beginPath(); ctx.roundRect(bx, by, tw, 18, 4); ctx.fill();
+                        ctx.shadowBlur = 0; ctx.fillStyle = p.color; ctx.fillText(p.text, bx + 6, by + 12.5); ctx.restore();
+                    }
+                });
+            });
+        }
+        window.onload = init;
+    </script>
+</body>
+</html>

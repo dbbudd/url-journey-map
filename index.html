@@ -136,7 +136,6 @@
             letter-spacing: 0.05em; transition: all 0.2s; margin-top: 10px;
         }
         
-        /* Tooltip fixes for first column visibility */
         .tooltip-text {
             visibility: hidden; width: 280px; background-color: #1e293b; color: #fff;
             text-align: left; border-radius: 8px; padding: 12px; position: absolute;
@@ -144,14 +143,12 @@
             font-size: 0.75rem; pointer-events: none;
             font-weight: normal; text-transform: none; letter-spacing: normal;
         }
-        /* When in the first column, align tooltip to the left so it grows right */
         .step-column:first-child .tooltip-text {
             right: auto;
             left: 0;
         }
         .tooltip-container:hover .tooltip-text { visibility: visible; opacity: 1; }
 
-        /* UDL MENU THEME */
         .udl-menu {
             display: none; position: absolute; bottom: 100%; left: 0; width: 100%;
             max-height: 450px; overflow-y: auto; background: white; border: 1px solid #e2e8f0;
@@ -193,15 +190,72 @@
             color: white; font-size: 11px; font-weight: 600; margin: 2px 0;
             line-height: 1.2; width: 100%;
         }
+        .udl-solution-chip button {
+            margin-left: 6px; opacity: 0.7; font-weight: bold;
+        }
+        .udl-solution-chip button:hover { opacity: 1; }
         .udl-solution-chip .sub-text {
             display: block; font-size: 9px; opacity: 0.9; font-weight: 400;
         }
+
+        /* Shimmer Effect for AI Loading */
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        .loading-shimmer {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            color: transparent !important;
+            opacity: 0.7;
+        }
+
+        .ai-loading-overlay {
+            position: absolute; inset: 0; background: rgba(255,255,255,0.7);
+            display: none; align-items: center; justify-content: center; z-index: 50;
+        }
+        .ai-loading-overlay.active { display: flex; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .spinner { animation: spin 1s linear infinite; border: 2px solid #e2e8f0; border-top-color: #6366f1; border-radius: 50%; width: 20px; height: 20px; }
     </style>
 </head>
 <body class="bg-slate-100 p-4 md:p-8 font-sans text-slate-900">
 
+    <div id="token-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[200] hidden items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full border border-slate-200">
+            <div class="flex items-center gap-2 mb-2">
+                <span class="text-2xl">✨</span>
+                <h2 class="text-lg font-bold">Google Gemini Configuration</h2>
+            </div>
+            <p class="text-sm text-slate-500 mb-4">Please enter your Google Gemini API Key.</p>
+            <input type="password" id="gemini-key-input" placeholder="AIzaSy..." class="w-full p-3 border rounded-lg mb-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono">
+            
+            <div class="mb-4 bg-indigo-50 p-3 rounded-lg border border-indigo-100">
+                <div class="flex items-center gap-2 mb-2">
+                    <input type="checkbox" id="use-proxy-toggle" class="w-4 h-4 text-indigo-600 rounded">
+                    <label for="use-proxy-toggle" class="text-xs text-slate-600 font-bold select-none cursor-pointer">
+                        Use CORS Proxy (Try Disabled First)
+                    </label>
+                </div>
+                <p class="text-[10px] text-slate-500">
+                    Using <strong>gemini-2.0-flash</strong>. This model usually supports direct browser connections.
+                </p>
+            </div>
+
+            <div id="token-status" class="text-xs font-bold mb-4 hidden p-2 rounded bg-slate-100"></div>
+
+            <div class="flex justify-between gap-2">
+                <button onclick="testToken()" class="px-4 py-2 text-sm font-bold text-indigo-600 bg-white rounded-lg hover:bg-indigo-50 border border-indigo-200">Test Key</button>
+                <div class="flex gap-2">
+                    <button onclick="closeTokenModal()" class="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">Cancel</button>
+                    <button onclick="saveToken()" class="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Save Key</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="max-w-7xl mx-auto bg-white shadow-2xl rounded-xl overflow-hidden border border-slate-200">
-        <!-- Header -->
         <header class="bg-slate-800 p-6 text-white border-b-4 border-indigo-500">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
@@ -209,6 +263,9 @@
                     <p class="text-slate-400 text-xs font-bold tracking-widest mt-1">CAST UDL GUIDELINES v2.2 INTEGRATION</p>
                 </div>
                 <div class="no-print flex gap-2">
+                    <button id="config-ai-btn" onclick="openTokenModal()" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg text-[10px] font-bold transition flex items-center gap-2 border border-slate-600">
+                        ⚙️ AI CONFIG
+                    </button>
                     <button onclick="window.print()" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 border border-slate-600">
                         PRINT REPORT
                     </button>
@@ -219,14 +276,19 @@
             </div>
         </header>
 
-        <!-- Main Tool Container -->
         <div class="relative">
             <div id="scroll-wrapper" class="scroll-container">
                 <canvas id="graphCanvas" class="graph-canvas"></canvas>
 
                 <div id="journey-container" class="flex min-w-max divide-x divide-slate-200">
-                    <!-- Column Template -->
-                    <div class="step-column w-80 flex-shrink-0 flex flex-col" draggable="true">
+                    <div class="step-column w-80 flex-shrink-0 flex flex-col relative" draggable="true">
+                        <div class="ai-loading-overlay">
+                            <div class="flex flex-col items-center gap-2">
+                                <div class="spinner"></div>
+                                <span class="text-[10px] font-bold text-slate-600 uppercase">Gemini Analyzing...</span>
+                            </div>
+                        </div>
+
                         <div class="bg-slate-900 text-white p-2 text-[10px] font-bold flex justify-between items-center">
                             <div class="flex items-center">
                                 <div class="drag-handle no-print">⠿</div>
@@ -235,19 +297,16 @@
                             <button onclick="removeStep(this)" class="no-print opacity-50 hover:opacity-100 transition-opacity">✕</button>
                         </div>
 
-                        <!-- Activities -->
                         <div class="border-b border-slate-100">
                             <div class="section-header">Activities & Methods</div>
-                            <textarea class="w-full p-3 text-sm focus:bg-slate-50 outline-none resize-none h-24 transition-colors" placeholder="What are the students doing?"></textarea>
+                            <textarea class="activity-input w-full p-3 text-sm focus:bg-slate-50 outline-none resize-none h-24 transition-colors" placeholder="What are the students doing?"></textarea>
                         </div>
 
-                        <!-- Materials -->
                         <div class="border-b border-slate-100">
                             <div class="section-header">Materials & Tools</div>
-                            <textarea class="w-full p-3 text-sm focus:bg-slate-50 outline-none resize-none h-20 transition-colors" placeholder="Apps, tools, papers..."></textarea>
+                            <textarea class="materials-input w-full p-3 text-sm focus:bg-slate-50 outline-none resize-none h-20 transition-colors" placeholder="Apps, tools, papers..."></textarea>
                         </div>
 
-                        <!-- Graph Row -->
                         <div class="graph-section border-b border-slate-100">
                             <div class="section-header graph-header !bg-indigo-50/30 !text-indigo-900 border-indigo-100" onclick="toggleGraph()">
                                 <div class="flex items-center gap-2">
@@ -271,7 +330,6 @@
                             </div>
                         </div>
 
-                        <!-- Engagement Section -->
                         <div class="bg-slate-50/50 p-4 border-b border-slate-100 min-h-[160px]">
                             <div class="flex justify-between items-center mb-4">
                                 <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Learner Engagement</span>
@@ -281,75 +339,65 @@
                             <button onclick="addLearner()" class="add-learner-btn no-print">+ Add Learner</button>
                         </div>
 
-                        <!-- Barriers -->
                         <div class="border-b border-slate-100 bg-rose-50/20">
-                            <div class="section-header !bg-rose-100/50 !text-rose-900">Possible Barriers</div>
-                            <textarea class="w-full p-3 text-sm bg-transparent outline-none resize-none h-24" placeholder="What might block learning?"></textarea>
+                            <div class="section-header !bg-rose-100/50 !text-rose-900">
+                                <span>Possible Barriers</span>
+                                <button onclick="runAIAnalysis(this)" class="no-print bg-rose-600 text-white px-2 py-0.5 rounded-full text-[8px] hover:bg-rose-700 flex items-center gap-1">
+                                    ✨ AI ANALYZE
+                                </button>
+                            </div>
+                            <textarea class="barriers-input w-full p-3 text-sm bg-transparent outline-none resize-none h-24" placeholder="What might block learning?"></textarea>
                         </div>
 
-                        <!-- Solutions -->
                         <div class="relative flex-grow flex flex-col bg-emerald-50/10">
                             <div class="section-header !bg-slate-100 !text-slate-800">
                                 <div class="flex items-center gap-2">
                                     <span>UDL Solutions</span>
-                                    <div class="tooltip-container relative">
-                                        <span class="info-icon text-[10px] bg-slate-300 w-4 h-4 rounded-full flex items-center justify-center font-bold">?</span>
-                                        <div class="tooltip-text">Type UDL Solution or select from Framework Guide</div>
-                                    </div>
                                 </div>
                                 <button onclick="toggleUDLMenu(this)" class="no-print text-[9px] bg-slate-700 text-white px-2 py-0.5 rounded-full hover:bg-slate-800">Add Solution</button>
                             </div>
                             
                             <div class="udl-menu no-print">
-                                <!-- Engagement -->
                                 <div class="principle-header bg-udl-engagement">Engagement (The Why)</div>
                                 <div class="guideline-subheader">7 Recruiting Interest</div>
                                 <div class="udl-item" onclick="insertUDL(this, '7 Recruiting Interest', '7.1 Optimize individual choice and autonomy', '#3C854A')">7.1 Optimize individual choice and autonomy</div>
                                 <div class="udl-item" onclick="insertUDL(this, '7 Recruiting Interest', '7.2 Optimize relevance, value, and authenticity', '#3C854A')">7.2 Optimize relevance, value, and authenticity</div>
                                 <div class="udl-item" onclick="insertUDL(this, '7 Recruiting Interest', '7.3 Minimize threats and distractions', '#3C854A')">7.3 Minimize threats and distractions</div>
-                                
                                 <div class="guideline-subheader">8 Sustaining Effort & Persistence</div>
                                 <div class="udl-item" onclick="insertUDL(this, '8 Sustaining Effort & Persistence', '8.1 Heighten salience of goals and objectives', '#3C854A')">8.1 Heighten salience of goals and objectives</div>
                                 <div class="udl-item" onclick="insertUDL(this, '8 Sustaining Effort & Persistence', '8.2 Vary demands and resources to optimize challenge', '#3C854A')">8.2 Vary demands and resources to optimize challenge</div>
                                 <div class="udl-item" onclick="insertUDL(this, '8 Sustaining Effort & Persistence', '8.3 Foster collaboration and community', '#3C854A')">8.3 Foster collaboration and community</div>
                                 <div class="udl-item" onclick="insertUDL(this, '8 Sustaining Effort & Persistence', '8.4 Increase mastery-oriented feedback', '#3C854A')">8.4 Increase mastery-oriented feedback</div>
-
                                 <div class="guideline-subheader">9 Self Regulation</div>
                                 <div class="udl-item" onclick="insertUDL(this, '9 Self Regulation', '9.1 Promote expectations and beliefs that optimize motivation', '#3C854A')">9.1 Promote expectations and beliefs that optimize motivation</div>
                                 <div class="udl-item" onclick="insertUDL(this, '9 Self Regulation', '9.2 Facilitate personal coping skills and strategies', '#3C854A')">9.2 Facilitate personal coping skills and strategies</div>
                                 <div class="udl-item" onclick="insertUDL(this, '9 Self Regulation', '9.3 Develop self-assessment and reflection', '#3C854A')">9.3 Develop self-assessment and reflection</div>
 
-                                <!-- Representation -->
                                 <div class="principle-header bg-udl-representation">Representation (The What)</div>
                                 <div class="guideline-subheader">1 Perception</div>
                                 <div class="udl-item" onclick="insertUDL(this, '1 Perception', '1.1 Offer ways of customizing the display of information', '#367BB3')">1.1 Offer ways of customizing the display of information</div>
                                 <div class="udl-item" onclick="insertUDL(this, '1 Perception', '1.2 Offer alternatives for auditory information', '#367BB3')">1.2 Offer alternatives for auditory information</div>
                                 <div class="udl-item" onclick="insertUDL(this, '1 Perception', '1.3 Offer alternatives for visual information', '#367BB3')">1.3 Offer alternatives for visual information</div>
-
                                 <div class="guideline-subheader">2 Language & Symbols</div>
                                 <div class="udl-item" onclick="insertUDL(this, '2 Language & Symbols', '2.1 Clarify vocabulary and symbols', '#367BB3')">2.1 Clarify vocabulary and symbols</div>
                                 <div class="udl-item" onclick="insertUDL(this, '2 Language & Symbols', '2.2 Clarify syntax and structure', '#367BB3')">2.2 Clarify syntax and structure</div>
                                 <div class="udl-item" onclick="insertUDL(this, '2 Language & Symbols', '2.3 Support decoding of text, mathematical notation, and symbols', '#367BB3')">2.3 Support decoding of text, math, & symbols</div>
                                 <div class="udl-item" onclick="insertUDL(this, '2 Language & Symbols', '2.4 Promote understanding across languages', '#367BB3')">2.4 Promote understanding across languages</div>
                                 <div class="udl-item" onclick="insertUDL(this, '2 Language & Symbols', '2.5 Illustrate through multiple media', '#367BB3')">2.5 Illustrate through multiple media</div>
-
                                 <div class="guideline-subheader">3 Comprehension</div>
                                 <div class="udl-item" onclick="insertUDL(this, '3 Comprehension', '3.1 Activate or supply background knowledge', '#367BB3')">3.1 Activate or supply background knowledge</div>
                                 <div class="udl-item" onclick="insertUDL(this, '3 Comprehension', '3.2 Highlight patterns, critical features, big ideas, and relationships', '#367BB3')">3.2 Highlight patterns, critical features, big ideas</div>
                                 <div class="udl-item" onclick="insertUDL(this, '3 Comprehension', '3.3 Guide information processing and visualization', '#367BB3')">3.3 Guide information processing & visualization</div>
                                 <div class="udl-item" onclick="insertUDL(this, '3 Comprehension', '3.4 Maximize transfer and generalization', '#367BB3')">3.4 Maximize transfer and generalization</div>
 
-                                <!-- Action & Expression -->
                                 <div class="principle-header bg-udl-action">Action & Expression (The How)</div>
                                 <div class="guideline-subheader">4 Physical Action</div>
                                 <div class="udl-item" onclick="insertUDL(this, '4 Physical Action', '4.1 Vary the methods for response and navigation', '#6A5190')">4.1 Vary the methods for response and navigation</div>
                                 <div class="udl-item" onclick="insertUDL(this, '4 Physical Action', '4.2 Optimize access to tools and assistive technologies', '#6A5190')">4.2 Optimize access to tools & assistive tech</div>
-
                                 <div class="guideline-subheader">5 Expression & Communication</div>
                                 <div class="udl-item" onclick="insertUDL(this, '5 Expression & Communication', '5.1 Use multiple media for communication', '#6A5190')">5.1 Use multiple media for communication</div>
                                 <div class="udl-item" onclick="insertUDL(this, '5 Expression & Communication', '5.2 Use multiple tools for construction and composition', '#6A5190')">5.2 Use multiple tools for construction & composition</div>
                                 <div class="udl-item" onclick="insertUDL(this, '5 Expression & Communication', '5.3 Build fluencies with graduated levels of support for practice and performance', '#6A5190')">5.3 Build fluencies with graduated support</div>
-
                                 <div class="guideline-subheader">6 Executive Functions</div>
                                 <div class="udl-item" onclick="insertUDL(this, '6 Executive Functions', '6.1 Guide appropriate goal-setting', '#6A5190')">6.1 Guide appropriate goal-setting</div>
                                 <div class="udl-item" onclick="insertUDL(this, '6 Executive Functions', '6.2 Support planning and strategy development', '#6A5190')">6.2 Support planning and strategy development</div>
@@ -362,7 +410,6 @@
                                 <span class="udl-pill bg-udl-representation">Representation</span>
                                 <span class="udl-pill bg-udl-action">Action & Expression</span>
                             </div>
-                            <!-- Solution area -->
                             <div class="solution-editor w-full bg-transparent" contenteditable="true"></div>
                         </div>
                     </div>
@@ -384,35 +431,252 @@
         const container = document.getElementById('journey-container');
         const canvas = document.getElementById('graphCanvas');
         const ctx = canvas.getContext('2d');
+        const tokenModal = document.getElementById('token-modal');
+        const tokenInput = document.getElementById('gemini-key-input');
+        const tokenStatus = document.getElementById('token-status');
+        const proxyToggle = document.getElementById('use-proxy-toggle');
         
         let draggedItem = null;
         let isGraphExpanded = false;
+        let aiKey = localStorage.getItem('gemini_key') || '';
+        let useProxy = localStorage.getItem('use_proxy') !== 'false'; // Default true
         let learners = [
             { id: 1, color: '#4f46e5', name: 'Learner 1' },
             { id: 2, color: '#e11d48', name: 'Learner 2' },
             { id: 3, color: '#059669', name: 'Learner 3' }
         ];
 
-        function init() {
-            window.addEventListener('resize', () => { if(isGraphExpanded) drawGraph(); });
+        // Updated to the working model version
+        const GEMINI_MODEL = "gemini-2.0-flash";
+
+        const colors = { 
+            'Engagement': '#3C854A', 
+            'Representation': '#367BB3', 
+            'ActionExpression': '#6A5190',
+            'Action & Expression': '#6A5190'
+        };
+
+        function openTokenModal() {
+            tokenInput.value = aiKey;
+            proxyToggle.checked = useProxy;
+            tokenModal.classList.remove('hidden');
+            tokenModal.classList.add('flex');
+            tokenStatus.classList.add('hidden');
+        }
+
+        function closeTokenModal() {
+            tokenModal.classList.add('hidden');
+            tokenModal.classList.remove('flex');
+        }
+
+        function saveToken() {
+            aiKey = tokenInput.value.trim();
+            useProxy = proxyToggle.checked;
+            localStorage.setItem('gemini_key', aiKey);
+            localStorage.setItem('use_proxy', useProxy);
+            closeTokenModal();
+            if(aiKey) {
+                document.getElementById('config-ai-btn').classList.add('!bg-emerald-600', '!border-emerald-700');
+            }
+        }
+
+        // Helper to construct URL based on proxy setting
+        function getApiUrl() {
+            const baseUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${aiKey}`;
+            if (useProxy) {
+                return `https://corsproxy.io/?${encodeURIComponent(baseUrl)}`;
+            }
+            return baseUrl;
+        }
+
+        async function testToken() {
+            const token = tokenInput.value.trim();
+            const isProxyOn = proxyToggle.checked;
+            if(!token) {
+                showStatus("Please enter a key first", "text-red-500");
+                return;
+            }
+            showStatus("Testing Gemini connection...", "text-slate-500");
             
+            try {
+                // Construct URL manually for the test to use the input token, not the saved one
+                const baseUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${token}`;
+                const url = isProxyOn 
+                    ? `https://corsproxy.io/?${encodeURIComponent(baseUrl)}` 
+                    : baseUrl;
+
+                const response = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ 
+                        contents: [{ parts: [{ text: "Hello" }] }] 
+                    })
+                });
+
+                if (response.ok) {
+                    showStatus("Success! Gemini Key is valid.", "text-emerald-600");
+                } else {
+                    let errorMsg = `HTTP ${response.status}`;
+                    try {
+                        const errBody = await response.json();
+                        if (errBody.error && errBody.error.message) {
+                            errorMsg += `: ${errBody.error.message}`;
+                        }
+                    } catch(e) {} // Ignore parsing error
+                    showStatus(errorMsg, "text-red-500");
+                }
+            } catch (e) {
+                console.error("Token Test Error:", e);
+                if (e.message.includes('Load failed') || e.name === 'TypeError') {
+                    if (isProxyOn) {
+                        showStatus("Proxy Failed. This environment might be blocking it. Uncheck Proxy.", "text-amber-600");
+                    } else {
+                        showStatus("Network Blocked. Enable 'Use CORS Proxy' for local file/Canvas use.", "text-amber-600");
+                    }
+                } else {
+                    showStatus(`Error: ${e.message}`, "text-red-500");
+                }
+            }
+        }
+
+        function showStatus(msg, colorClass) {
+            tokenStatus.textContent = msg;
+            tokenStatus.className = `text-xs font-bold mb-4 ${colorClass} p-2 bg-slate-50 rounded`;
+            tokenStatus.classList.remove('hidden');
+        }
+
+        async function runAIAnalysis(btn) {
+            if (!aiKey) {
+                openTokenModal();
+                return;
+            }
+
+            const col = btn.closest('.step-column');
+            const activities = col.querySelector('.activity-input').value;
+            const materials = col.querySelector('.materials-input').value;
+            const barriersField = col.querySelector('.barriers-input');
+            const solutionField = col.querySelector('.solution-editor');
+            const sliders = col.querySelectorAll('.emotion-slider');
+
+            if (!activities) {
+                alert("Please add some Activities & Methods first. The AI needs this context to perform the analysis.");
+                return;
+            }
+            
+            let stats = "";
+            const learnerList = learners;
+            sliders.forEach((s) => {
+                const lName = learnerList.find(l => l.id == s.dataset.learnerId)?.name || 'Learner';
+                stats += `${lName} at level ${s.value}/5. `;
+            });
+
+            btn.disabled = true;
+            btn.innerHTML = "<span>⏳...</span>";
+            barriersField.classList.add('loading-shimmer');
+            solutionField.classList.add('loading-shimmer');
+
+            const systemPrompt = `You are a Universal Design for Learning (UDL) specialist. 
+Identify 2 likely barriers and 3 specific UDL v2.2 solutions based on the provided instructional context. 
+Output strictly valid JSON with the structure: 
+{ "barriers": "string", "solutions": [ { "cat": "Engagement" | "Representation" | "Action & Expression", "id": "guideline_id", "title": "short title" } ] }`;
+
+            const userPrompt = `Context:
+Activities: ${activities}
+Materials: ${materials}
+Engagement Data: ${stats}
+
+${systemPrompt}`; 
+
+            try {
+                const url = getApiUrl();
+                const response = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ 
+                        contents: [{ parts: [{ text: userPrompt }] }],
+                        generationConfig: {
+                            responseMimeType: "application/json"
+                        }
+                    })
+                });
+
+                if (!response.ok) {
+                    let errorMessage = `HTTP ${response.status}`;
+                    try {
+                        const errJson = await response.json();
+                        if (errJson.error && errJson.error.message) {
+                            errorMessage += `: ${errJson.error.message}`;
+                        }
+                    } catch (e) {
+                        // could not parse error body
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const data = await response.json();
+                const content = data.candidates[0].content.parts[0].text;
+                const result = JSON.parse(content);
+                
+                barriersField.value = result.barriers;
+                
+                if(result.solutions && result.solutions.length > 0) {
+                    solutionField.innerHTML = ''; 
+                    result.solutions.forEach(sol => {
+                        const chip = document.createElement('div');
+                        chip.className = 'udl-solution-chip';
+                        let bg = colors[sol.cat];
+                        if(!bg && sol.cat.includes("Action")) bg = colors['Action & Expression'];
+                        if(!bg) bg = '#64748b';
+
+                        chip.style.backgroundColor = bg;
+                        chip.setAttribute('contenteditable', 'false');
+                        chip.innerHTML = `<span>${sol.id || 'UDL'}: ${sol.title}</span><button onclick="this.parentElement.remove()">×</button>`;
+                        solutionField.appendChild(chip);
+                    });
+                }
+
+            } catch (err) {
+                console.error("AI Error:", err);
+                if (err.name === 'TypeError' && err.message === 'Load failed') {
+                    if (useProxy) {
+                        barriersField.value = "Connection Failed (404 from Proxy). Try disabling 'Use CORS Proxy' in settings.";
+                    } else {
+                        barriersField.value = "Network Blocked. Please Enable 'Use CORS Proxy' in AI Config.";
+                    }
+                } else {
+                    barriersField.value = `Analysis Error: ${err.message}`;
+                }
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = "✨ AI ANALYZE";
+                barriersField.classList.remove('loading-shimmer');
+                solutionField.classList.remove('loading-shimmer');
+            }
+        }
+
+        function init() {
+            if(aiKey) document.getElementById('config-ai-btn').classList.add('!bg-emerald-600', '!border-emerald-700');
+            // Restore proxy setting
+            if (localStorage.getItem('use_proxy') === 'false') {
+                useProxy = false;
+            }
+            proxyToggle.checked = useProxy; 
+            
+            window.addEventListener('resize', () => { if(isGraphExpanded) drawGraph(); });
             document.addEventListener('input', (e) => {
                 if(e.target.classList.contains('emotion-slider') || e.target.classList.contains('annotation-input')) {
                     if(!isGraphExpanded) toggleGraph(true);
                     drawGraph();
                 }
             });
-
             document.addEventListener('click', (e) => {
                 if (!e.target.closest('.udl-menu') && !e.target.innerText.includes('Add Solution')) {
                     document.querySelectorAll('.udl-menu').forEach(m => m.classList.remove('active'));
                 }
             });
-            
             const template = container.querySelector('.step-column');
             renderSliders(template);
             setupDragEvents(template);
-            
             for(let i=0; i<2; i++) addStep(); 
             updateSegmentLabels();
         }
@@ -434,12 +698,6 @@
             editor.appendChild(chip);
             editor.appendChild(document.createElement('br'));
             editor.focus();
-            const range = document.createRange();
-            range.selectNodeContents(editor);
-            range.collapse(false);
-            const sel = window.getSelection();
-            sel.removeAllRanges();
-            sel.addRange(range);
             item.closest('.udl-menu').classList.remove('active');
         }
 
@@ -474,7 +732,7 @@
                         </div>
                         <span class="text-[8px] font-bold text-slate-400 shrink-0">H</span>
                     </div>
-                    <input type="text" placeholder="Annotate emotion..." class="annotation-input w-full bg-transparent border-b border-indigo-100/50 text-[10px] py-1 outline-none italic text-slate-600" data-learner-id="${learner.id}">
+                    <input type="text" placeholder="Annotate..." class="annotation-input w-full bg-transparent border-b border-indigo-100/50 text-[10px] py-1 outline-none italic text-slate-600" data-learner-id="${learner.id}">
                 </div>`;
         }
 
@@ -510,6 +768,7 @@
             newCol.querySelector('.solution-editor').innerHTML = '';
             newCol.querySelectorAll('input[type="range"]').forEach(r => r.value = 3);
             newCol.querySelector('.udl-menu').classList.remove('active');
+            newCol.querySelector('.ai-loading-overlay').classList.remove('active');
             setupDragEvents(newCol);
             container.appendChild(newCol);
             updateSegmentLabels();
@@ -588,7 +847,10 @@
                         const bx = p.x - (tw / 2);
                         const by = p.y - (18 + (p.stackLevel * 22));
                         ctx.fillStyle = 'white'; ctx.shadowBlur = 4; ctx.shadowColor = 'rgba(0,0,0,0.1)';
-                        ctx.beginPath(); ctx.roundRect(bx, by, tw, 18, 4); ctx.fill();
+                        ctx.beginPath(); 
+                        if (ctx.roundRect) ctx.roundRect(bx, by, tw, 18, 4);
+                        else ctx.rect(bx, by, tw, 18);
+                        ctx.fill();
                         ctx.shadowBlur = 0; ctx.fillStyle = p.color; ctx.fillText(p.text, bx + 6, by + 12.5); ctx.restore();
                     }
                 });
